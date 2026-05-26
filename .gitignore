@@ -5,12 +5,11 @@
 *.zip
 *.bak
 *.biglybt
-rssfeed.jar
-rssfeed_*.jar
+/rssfeed.jar
+/rssfeed_*.jar
 
-# Build outputs
+# Build outputs (dist/ IS committed - it holds the released jar)
 /build/
-/dist/
 
 # Local IDE / OS artefacts
 /.vs/
