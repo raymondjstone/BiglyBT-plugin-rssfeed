@@ -1,121 +1,81 @@
-<project name="RssFeed" default="jar">
-  <property name="src" value="src"/>
-  <property name="res" value="resource"/>
-  <property name="build" value="build"/>
-  <property name="include" value="include"/>
-  <property name="lib" value="lib"/>
-  <property name="dist" value="dist"/>
-  <loadproperties srcFile="${src}/plugin.properties"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="RssFeed" default="jar" basedir=".">
 
-  <target name="init">
-    <mkdir dir="${build}"/>
-    <mkdir dir="${lib}"/>
-    <path id="classpath">
-      <fileset dir="lib">
-        <include name="**/*.jar"/>
-      </fileset>
-    </path>
-    <property name="classpath" refid="classpath" />
+  <property name="src.dir"      value="."/>
+  <property name="lib.dir"      value="lib"/>
+  <property name="build.dir"    value="build"/>
+  <property name="classes.dir"  value="${build.dir}/classes"/>
+  <property name="res.dir"      value="org/kmallan/resource"/>
+  <property name="dist.dir"     value="dist"/>
+
+  <loadproperties srcFile="plugin.properties"/>
+
+  <path id="classpath">
+    <fileset dir="${lib.dir}" includes="*.jar"/>
+    <fileset dir="${src.dir}" includes="json-io*.jar"/>
+  </path>
+
+  <target name="clean">
+    <delete dir="${build.dir}"/>
+    <delete dir="${dist.dir}"/>
   </target>
 
-  <target name="compile" depends="init">
-    <copy todir="${build}/">
-      <fileset dir="${src}" includes="**/*.java"/>
-    </copy>
-    <javac srcdir="${build}" destdir="${build}" debug="true" deprecation="false" debuglevel="lines,vars,source">
-      <classpath>
-        <pathelement path="${classpath}"/>
-        <fileset dir="${include}" includes="**/*.jar"/>
-      </classpath>
+  <target name="check-lib">
+    <available file="${lib.dir}/BiglyBT.jar" property="biglybt.exists"/>
+    <fail unless="biglybt.exists">
+      Missing ${lib.dir}/BiglyBT.jar. Copy BiglyBT.jar (next to the BiglyBT executable
+      on a typical install) into ${lib.dir}/ before building.
+    </fail>
+  </target>
+
+  <target name="compile" depends="check-lib">
+    <mkdir dir="${classes.dir}"/>
+    <javac srcdir="${src.dir}"
+           destdir="${classes.dir}"
+           classpathref="classpath"
+           source="8"
+           target="8"
+           includeantruntime="false"
+           debug="true"
+           deprecation="false"
+           debuglevel="lines,vars,source"
+           encoding="UTF-8">
+      <include name="org/kmallan/azureus/rssfeed/*.java"/>
     </javac>
+    <copy todir="${classes.dir}/org/kmallan/resource">
+      <fileset dir="${res.dir}">
+        <include name="**/*.properties"/>
+        <include name="**/*.stf"/>
+        <include name="**/*.gif"/>
+      </fileset>
+    </copy>
   </target>
 
   <target name="jar" depends="compile">
-    <mkdir dir="${build}/org/kmallan/resource"/>
-    <copy todir="${build}/org/kmallan/resource">
-      <fileset dir="${res}">
-        <exclude name="**/.xvpics/*"/>
-        <include name="**/*.properties"/>
-        <include name="**/*.stf"/>
-        <include name="**/*.gif"/>
-      </fileset>
-    </copy>
-    <mkdir dir="${dist}"/>
-    <jar jarfile="${dist}/${plugin.id}_${plugin.version}.jar">
-      <fileset dir="${build}" excludes="**/*.java"/>
+    <mkdir dir="${dist.dir}"/>
+    <jar destfile="${dist.dir}/${plugin.id}_${plugin.version}.jar">
+      <fileset dir="${classes.dir}"/>
+      <fileset file="plugin.properties"/>
     </jar>
-    <copy todir="${dist}">
-      <fileset dir="${src}" includes="plugin.properties"/>
-      <fileset dir=".">
+    <jar destfile="${dist.dir}/${plugin.id}.jar">
+      <fileset dir="${classes.dir}"/>
+      <fileset file="plugin.properties"/>
+    </jar>
+    <echo>Built ${dist.dir}/${plugin.id}.jar (version ${plugin.version})</echo>
+  </target>
+
+  <target name="dist" depends="jar">
+    <zip destfile="${dist.dir}/${plugin.id}_${plugin.version}.zip">
+      <zipfileset dir="${dist.dir}" prefix="plugins/${plugin.id}">
+        <include name="${plugin.id}_${plugin.version}.jar"/>
+      </zipfileset>
+      <zipfileset dir="." prefix="plugins/${plugin.id}">
+        <include name="plugin.properties"/>
         <include name="ChangeLog.txt"/>
         <include name="license.txt"/>
-      </fileset>
-    </copy>
-  </target>
-
-  <target name="dist-init">
-    <mkdir dir="${dist}"/>
-  </target>
-
-  <target name="dist" depends="jar,dist-init">
-    <zip destfile="${dist}/${plugin.id}_${plugin.version}.zip">
-      <zipfileset dir="${lib}/" prefix="plugins/${plugin.id}">
-        <include name="*_${plugin.version}*"/>
-        <include name="plugin.properties"/>
-        <include name="*.txt"/>
+        <include name="json-io*.jar"/>
       </zipfileset>
     </zip>
   </target>
-
-  <target name="dist-src" depends="init,dist-init">
-    <zip destfile="${dist}/${plugin.id}_${plugin.version}_src.zip">
-      <zipfileset dir="./" includes="build.xml" prefix="${plugin.id}"/>
-      <zipfileset dir="./" includes="*.txt" prefix="${plugin.id}"/>
-      <zipfileset dir="${src}/" excludes=".*" prefix="${plugin.id}/${src}"/>
-      <zipfileset dir="${include}/" includes="files.txt" prefix="${plugin.id}/${include}"/>
-      <zipfileset dir="${res}" prefix="${plugin.id}/${res}">
-        <exclude name="**/.xvpics/*"/>
-        <include name="**/*.properties"/>
-        <include name="**/*.stf"/>
-        <include name="**/*.gif"/>
-      </zipfileset>
-    </zip>
-  </target>
-
-  <target name="dist-src-full" depends="init,dist-init">
-    <zip destfile="${dist}/${plugin.id}_${plugin.version}_src.zip">
-      <zipfileset dir="./" includes="build.xml" prefix="${plugin.id}"/>
-      <zipfileset dir="./" includes="*.txt" prefix="${plugin.id}"/>
-      <zipfileset dir="${src}/" excludes=".*" prefix="${plugin.id}/${src}"/>
-      <zipfileset dir="${include}/" includes="*.jar" prefix="${plugin.id}/${include}"/>
-      <zipfileset dir="${res}" prefix="${plugin.id}/${res}">
-        <include name="**/*.properties"/>
-        <include name="**/*.stf"/>
-        <include name="**/*.gif"/>
-        <exclude name="**/.xvpics/*"/>
-      </zipfileset>
-    </zip>
-  </target>
-
-  <target name="distall" depends="dist,dist-src">
-    <zip destfile="${dist}/${plugin.id}_${plugin.version}_all.zip">
-      <zipfileset dir="${dist}">
-        <include name="${plugin.id}_${plugin.version}*"/>
-        <exclude name="${plugin.id}_${plugin.version}_all.zip"/>
-      </zipfileset>
-    </zip>
-  </target>
-
-  <target name="clean">
-    <delete dir="${build}"/>
-    <delete dir="${lib}"/>
-  </target>
-
-  <target name="dist-clean">
-    <delete dir="${dist}"/>
-  </target>
-
-  <target name="cleanall" depends="clean,dist-clean"/>
 
 </project>
-

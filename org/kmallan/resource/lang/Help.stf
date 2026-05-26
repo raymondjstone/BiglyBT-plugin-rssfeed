@@ -114,8 +114,34 @@ $
 
 !How do filters work?
  Filters are quite easy to build, but it is helpful to understand how the matching process works.
- 
+
  First, when a RSS feed is fetched, the filters are matched against each item in the feed, starting at the top of the filter list until it finds a filter that matches.
+
+!How do I sort the filter list?
+ Because matching walks the filter list from top to bottom and stops at the first hit, the order of filters IS the precedence. This fork adds two ways to reorder filters that persist (the new order is written back to rssfeed.options just like manual up/down moves):
+
+*Click a column header
+   Clicking the Name, Type, or Mode header sorts by that column. Click the same header again to flip ascending/descending. The active column shows the usual SWT up/down triangle.
+
+*Click the Filter toolbar button (Smart Sort)
+   The button at the bottom of the filter toolbar applies a single fixed ordering tuned for how PASS/FAIL rules actually interact.
+
+ Manually moving rows with the up/down arrows still works and will clear the active sort indicator, because once you reorder by hand the column ordering no longer reflects what's on screen.
+
+!Why is Smart Sort ordered the way it is?
+ Smart Sort is not arbitrary - each layer is chosen to put the rules that matter first where matching will actually see them first:
+
+*Enabled rules first, disabled last
+   Disabled rules never match anyway, so pushing them to the bottom keeps the visible top of the table aligned with what the scanner will actually evaluate. It also makes it harder to lose a disabled rule among active ones.
+
+*Within enabled, FAIL rules before PASS rules
+   FAIL rules exist to veto items that a later PASS rule would otherwise grab (see the FAIL rules note in the About section). For them to do that, they have to be hit first - which means they have to live above the PASS rules in the list. Smart Sort makes that automatic.
+
+*Then group by the first alphanumeric character of the expression
+   Rules targeting the same show, release group, or keyword tend to share a leading character. Grouping by that first letter/digit puts related rules next to each other so they're easier to scan and audit. Leading non-alphanumeric characters in the expression (eg. anchors like ^, or punctuation) are skipped so "^foo" and "foo" group together.
+
+*Within each letter group, reverse-alphabetical by expression
+   Inside a letter group, longer/more-specific expressions tend to sort later alphabetically; reversing puts them above their shorter prefixes. That matters because a broader pattern placed above a stricter one would otherwise swallow items the stricter rule was meant to catch.
 
 !Ok, I want to add a filter, guide me through?
  This process is much like the process of adding a feed url.

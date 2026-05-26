@@ -7,3 +7,14 @@
 *.biglybt
 rssfeed.jar
 rssfeed_*.jar
+
+# Build outputs
+/build/
+/dist/
+
+# Local IDE / OS artefacts
+/.vs/
+
+# Local third-party jars - dropped in by the developer, not committed
+/lib/BiglyBT.jar
+/lib/swt.jar

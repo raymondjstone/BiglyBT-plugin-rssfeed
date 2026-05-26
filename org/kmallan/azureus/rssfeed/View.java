@@ -37,8 +37,12 @@ import com.biglybt.ui.swt.mainwindow.Colors;
 import com.biglybt.ui.swt.views.table.painted.TablePaintedUtils;
 
 import java.io.*;
+import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Timer;
 
 public class View implements MouseListener, SelectionListener, MenuListener, ModifyListener,
@@ -143,7 +147,11 @@ public class View implements MouseListener, SelectionListener, MenuListener, Mod
 
   public Composite filtParamComp, filtSpecificTVShow, filtSpecificOther;
   public Table filtTable;
-  private ToolItem btnFiltUp, btnFiltAdd, btnFiltCopy, btnFiltRemove, btnFiltDown;
+  private ToolItem btnFiltUp, btnFiltAdd, btnFiltCopy, btnFiltRemove, btnFiltDown, btnFiltSort;
+  // -1 indicates no current sort column (manual ordering via up/down).
+  private int filtSortColumnIndex = -1;
+  // SWT.UP or SWT.DOWN
+  private int filtSortDirection = SWT.NONE;
   private Button btnFiltStoreDir, btnFiltFileBrowse, btnFiltFileEdit, btnFiltAccept, btnFiltReset, btnFiltCancel;
 
   public Composite urlParamComp, urlOptCompCustReferer, urlOptCompCookie, urlOptCompNone;
@@ -405,9 +413,9 @@ public class View implements MouseListener, SelectionListener, MenuListener, Mod
     for(int i = 0; i < filtColumnWidths.size(); i++) {
       final TableColumn column = new TableColumn(filtTable, SWT.NULL);
       final int f_i = i;
-      
+
       Messages.setLanguageText(column, filtColumnNames + i);
-      
+
       column.setWidth(filtColumnWidths.get(i).intValue());
 
       column.addControlListener(
@@ -417,9 +425,16 @@ public class View implements MouseListener, SelectionListener, MenuListener, Mod
     				 filtColumnWidths.set( f_i , column.getWidth());
     				 pluginInterface.getPluginconfig().setPluginListParameter( "ui.filtTable.col.widths", new ArrayList<Number>( filtColumnWidths ));
     			}
-    		 });      
+    		 });
+
+      column.addSelectionListener(new SelectionAdapter() {
+        @Override
+        public void widgetSelected(SelectionEvent e) {
+          sortFiltersByColumn(f_i);
+        }
+      });
     }
-    
+
     filtTable.addMouseListener(this);
 
     ToolBar filtCompBar = new ToolBar(filtComp, SWT.FLAT | SWT.VERTICAL);
@@ -428,6 +443,12 @@ public class View implements MouseListener, SelectionListener, MenuListener, Mod
     btnFiltCopy = setupToolItem(filtCompBar, "Copy.gif");
     btnFiltRemove = setupToolItem(filtCompBar, "ItemRemove.gif");
     btnFiltDown = setupToolItem(filtCompBar, "ItemMoveDown.gif");
+    btnFiltSort = setupToolItem(filtCompBar, "Filter.gif");
+    try {
+      btnFiltSort.setToolTipText(MessageText.getString("RSSFeed.Options.Filter.btnSort"));
+    } catch (Throwable t) {
+      btnFiltSort.setToolTipText("Smart Sort (enabled/fail-check first, alpha grouped)");
+    }
 
     // Options Folder - Params
     optParamScrollComp = new ScrolledComposite(options, SWT.V_SCROLL | SWT.BORDER);
@@ -1110,19 +1131,182 @@ public class View implements MouseListener, SelectionListener, MenuListener, Mod
         if ( move > 0 ){
             FilterBean tmpBean = newItem.getBean();
             newItem.setBean(curItem.getBean(), this);
-            curItem.setBean(tmpBean, this );     
+            curItem.setBean(tmpBean, this );
         }else{
             FilterBean tmpBean = curItem.getBean();
            	curItem.setBean(newItem.getBean(), this);
-        	newItem.setBean(tmpBean,this);       	
+        	newItem.setBean(tmpBean,this);
         }
         filtTable.setSelection(newPos);
         selFilterItem = newItem;
         filtTable.setRedraw(true);
       }
     }
+    // Manual reorder breaks the column-driven sort indicator.
+    clearFilterSortIndicator();
     if(storeIt) rssfeedConfig.storeOptions();
     Utils.alternateTableBackground(filtTable);
+  }
+
+  // Toggle ascending/descending sort for a given column index (0=Name, 1=Type, 2=Mode).
+  private void sortFiltersByColumn(int columnIndex) {
+    if (filtTable == null || filtTable.isDisposed()) return;
+    if (columnIndex < 0 || columnIndex >= filtTable.getColumnCount()) return;
+
+    int direction;
+    if (filtSortColumnIndex == columnIndex) {
+      direction = (filtSortDirection == SWT.UP) ? SWT.DOWN : SWT.UP;
+    } else {
+      direction = SWT.UP;
+    }
+
+    Comparator<FilterBean> base = comparatorForColumn(columnIndex);
+    if (base == null) return;
+
+    final Comparator<FilterBean> cmp = (direction == SWT.UP) ? base : base.reversed();
+
+    List<FilterBean> snapshot = collectFilterBeans();
+    Collections.sort(snapshot, cmp);
+
+    rssfeedConfig.replaceFilters(snapshot);
+    rebuildFilterTable();
+    rssfeedConfig.storeOptions();
+
+    filtSortColumnIndex = columnIndex;
+    filtSortDirection = direction;
+    filtTable.setSortColumn(filtTable.getColumn(columnIndex));
+    filtTable.setSortDirection(direction);
+    Utils.alternateTableBackground(filtTable);
+  }
+
+  private Comparator<FilterBean> comparatorForColumn(int columnIndex) {
+    final Collator collator = Collator.getInstance();
+    collator.setStrength(Collator.PRIMARY); // case-insensitive, accent-insensitive
+    switch (columnIndex) {
+      case 0: // Name
+        return new Comparator<FilterBean>() {
+          @Override public int compare(FilterBean a, FilterBean b) {
+            return collator.compare(safe(a.getName()), safe(b.getName()));
+          }
+        };
+      case 1: // Type
+        return new Comparator<FilterBean>() {
+          @Override public int compare(FilterBean a, FilterBean b) {
+            int t = Integer.compare(a.getTypeIndex(), b.getTypeIndex());
+            if (t != 0) return t;
+            return collator.compare(safe(a.getName()), safe(b.getName()));
+          }
+        };
+      case 2: // Mode
+        return new Comparator<FilterBean>() {
+          @Override public int compare(FilterBean a, FilterBean b) {
+            int m = Integer.compare(a.getModeIndex(), b.getModeIndex());
+            if (m != 0) return m;
+            return collator.compare(safe(a.getName()), safe(b.getName()));
+          }
+        };
+      default:
+        return null;
+    }
+  }
+
+  // "Smart sort" mirroring the rssfeedblazor algorithm:
+  //   enabled first, then mode=FAIL (fail check) first within enabled,
+  //   then group by the first alphanumeric char of the expression (A..Z, 0..9),
+  //   then reverse alphabetical within each group (so freshest "newest-letter" matches sit near the top).
+  // Leading non-alphanumeric chars are ignored when comparing.
+  private void applySmartSort() {
+    if (filtTable == null || filtTable.isDisposed()) return;
+
+    List<FilterBean> snapshot = collectFilterBeans();
+    Collections.sort(snapshot, new Comparator<FilterBean>() {
+      @Override
+      public int compare(FilterBean a, FilterBean b) {
+        // enabled (true) first
+        int e = Boolean.compare(b.getEnabled(), a.getEnabled());
+        if (e != 0) return e;
+        // fail (MODE_FAIL=1) before pass (MODE_PASS=0)
+        int m = Integer.compare(b.getModeIndex(), a.getModeIndex());
+        if (m != 0) return m;
+        // group by first alphanumeric character ascending
+        char ca = firstAlphanumeric(a.getExpression());
+        char cb = firstAlphanumeric(b.getExpression());
+        int g = Character.compare(ca, cb);
+        if (g != 0) return g;
+        // reverse alphabetical of the sortable text within each letter
+        String sa = sortableText(a.getExpression());
+        String sb = sortableText(b.getExpression());
+        return sb.compareToIgnoreCase(sa);
+      }
+    });
+
+    rssfeedConfig.replaceFilters(snapshot);
+    rebuildFilterTable();
+    rssfeedConfig.storeOptions();
+    clearFilterSortIndicator();
+    Utils.alternateTableBackground(filtTable);
+  }
+
+  private static char firstAlphanumeric(String text) {
+    if (text == null) return '\0';
+    for (int i = 0; i < text.length(); i++) {
+      char c = text.charAt(i);
+      if (Character.isLetterOrDigit(c)) return Character.toUpperCase(c);
+    }
+    return '\0';
+  }
+
+  private static String sortableText(String text) {
+    if (text == null) return "";
+    for (int i = 0; i < text.length(); i++) {
+      if (Character.isLetterOrDigit(text.charAt(i))) return text.substring(i);
+    }
+    return text;
+  }
+
+  private static String safe(String s) {
+    return s == null ? "" : s;
+  }
+
+  private List<FilterBean> collectFilterBeans() {
+    List<FilterBean> list = new ArrayList<FilterBean>();
+    if (filtTable == null || filtTable.isDisposed()) {
+      for (int i = 0; i < rssfeedConfig.getFilterCount(); i++) list.add(rssfeedConfig.getFilter(i));
+      return list;
+    }
+    // Read the current order off the table so that any unsaved swaps via
+    // up/down arrows are picked up even if storeOptions hasn't been called yet.
+    TableItem[] items = filtTable.getItems();
+    for (int i = 0; i < items.length; i++) {
+      FilterTableItem fti = (FilterTableItem) items[i];
+      FilterBean bean = fti.getBean();
+      if (bean != null) list.add(bean);
+    }
+    return list;
+  }
+
+  private void rebuildFilterTable() {
+    if (filtTable == null || filtTable.isDisposed()) return;
+    filtTable.setRedraw(false);
+    try {
+      filtTable.removeAll();
+      for (int i = 0; i < rssfeedConfig.getFilterCount(); i++) {
+        FilterTableItem item = new FilterTableItem(filtTable, rssfeedConfig);
+        item.setBean(i, this);
+      }
+      selFilterItem = null;
+      filtParamHide();
+    } finally {
+      filtTable.setRedraw(true);
+    }
+  }
+
+  private void clearFilterSortIndicator() {
+    if (filtTable == null || filtTable.isDisposed()) return;
+    filtSortColumnIndex = -1;
+    filtSortDirection = SWT.NONE;
+    filtTable.setSortColumn(null);
+    filtTable.setSortDirection(SWT.NONE);
   }
 
   private void filtAdd() {
@@ -2100,6 +2284,8 @@ public class View implements MouseListener, SelectionListener, MenuListener, Mod
     } else if(src == btnFiltDown) {
       if(selFilterItem == null) return;
       filtOrder(1);
+    } else if(src == btnFiltSort) {
+      applySmartSort();
     } else if(src == btnUrlStoreDir) {
       updateStoreDirLoc(shell, urlStoreDir);
     } else if(src == urlLocRef || src == urlUseCookie) {

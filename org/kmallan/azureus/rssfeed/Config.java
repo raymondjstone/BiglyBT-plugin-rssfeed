@@ -269,6 +269,13 @@ public class Config implements Serializable {
     filterBeans.remove(filterBean);
   }
 
+  // Replace the entire filter ordering with the supplied list. Used by the
+  // sortable column headers in the Filters table.
+  public void replaceFilters(List<FilterBean> newOrder) {
+    if (newOrder == null) return;
+    filterBeans = new ArrayList(newOrder);
+  }
+
   public HistoryBean getHistory(int index) {
     if(index < 0 || index >= getHistoryCount()) {
       HistoryBean histBean = new HistoryBean();
